@@ -1,0 +1,77 @@
+mod app;
+mod io;
+mod ui;
+
+use anyhow::{Context, Result};
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{prelude::*, Terminal};
+use crate::app::App;
+
+fn main() -> Result<()> {
+    // 1. Setup paths
+    let git_dir = io::find_git_dir().context("Could not find .git directory. Run this inside a git repo.")?;
+    let data_path = git_dir.join("git-kanban.json");
+
+    // 2. Setup Terminal
+    enable_raw_mode()?;
+    let mut stdout = std::io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // 3. Initialize App
+    let mut app = App::new(data_path);
+
+    // 4. Run Loop
+    let res = run_app(&mut terminal, &mut app);
+
+    // 5. Restore Terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err);
+    }
+
+    Ok(())
+}
+
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Result<()> {
+    loop {
+        terminal.draw(|f| ui::render(f, app))?;
+
+        if let Event::Key(key) = event::read()? {
+            if app.input_mode {
+                match key.code {
+                    KeyCode::Enter => app.submit_input(),
+                    KeyCode::Esc => app.cancel_input(),
+                    KeyCode::Char(c) => app.input_buffer.push(c),
+                    KeyCode::Backspace => { app.input_buffer.pop(); },
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Char('q') => return Ok(()),
+                    KeyCode::Char('n') => app.start_adding(),
+                    KeyCode::Char('e') => app.start_editing(), 
+                    KeyCode::Char('d') => app.delete_current_task(),
+                    KeyCode::Left => app.prev_column(),
+                    KeyCode::Right => app.next_column(),
+                    KeyCode::Up => app.prev_item(),
+                    KeyCode::Down => app.next_item(),
+                    KeyCode::Enter => app.move_current_task(),
+                    _ => {}
+                }
+            }
+        }
+    }
+}
