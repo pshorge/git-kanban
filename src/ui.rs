@@ -106,6 +106,37 @@ pub fn render(f: &mut Frame, app: &App) {
         f.render_widget(Clear, area);
         f.render_widget(paragraph, area);
     }
+
+    // 5. Delete Confirmation Popup (Draw on top if delete_mode is active)
+    if app.delete_mode {
+        let block = Block::default()
+            .title("Confirmation")
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Red).bg(Color::Black)); // Red border for warning
+
+        let text = vec![
+            Line::from("Are you sure you want to delete this task?"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(
+                    "Y",
+                    Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
+                ),
+                Span::raw(" to confirm / "),
+                Span::styled("N", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to cancel"),
+            ]),
+        ];
+
+        let paragraph = Paragraph::new(text)
+            .block(block)
+            .alignment(Alignment::Center);
+
+        let area = centered_rect(40, 20, f.area()); // Smaller popup
+
+        f.render_widget(Clear, area);
+        f.render_widget(paragraph, area);
+    }
 }
 
 /// Helper function to center a rect in the terminal

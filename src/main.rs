@@ -63,7 +63,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     _ => {}
                 }
             }
-            // Priority 2: View Mode (Popup active)
+            // Priority 2: Delete Confirmation Mode (NEW)
+            else if app.delete_mode {
+                match key.code {
+                    KeyCode::Char('y') | KeyCode::Enter => app.confirm_delete(),
+                    KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Esc => app.cancel_delete(),
+                    _ => {}
+                }
+            }
+            // Priority 3: View Mode (Popup active)
             else if app.view_mode {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('q') | KeyCode::Enter => {
@@ -72,14 +80,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     _ => {}
                 }
             }
-            // Priority 3: Normal Navigation
+            // Priority 4: Normal Navigation
             else {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('n') => app.start_adding(),
                     KeyCode::Char('e') => app.start_editing(),
                     KeyCode::Char('v') => app.toggle_view_mode(),
-                    KeyCode::Char('d') => app.delete_current_task(),
+                    KeyCode::Char('d') => app.prompt_delete(),
 
                     // Reordering with Shift
                     KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
