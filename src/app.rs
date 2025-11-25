@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use crate::io;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Status {
@@ -66,9 +66,9 @@ impl App {
 
         // Find this task in the main vector.
         // In a prod app, use UUIDs. Here we match title+status (simplified).
-        self.tasks.iter().position(|t| {
-            t.title == task_ref.title && t.status == task_ref.status
-        })
+        self.tasks
+            .iter()
+            .position(|t| t.title == task_ref.title && t.status == task_ref.status)
     }
 
     // --- NAVIGATION ---
@@ -97,6 +97,60 @@ impl App {
     pub fn prev_item(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
+        }
+    }
+
+    // --- REORDERING ---
+
+    pub fn move_task_up(&mut self) {
+        let tasks_in_col = self.get_tasks_in_column(self.active_column);
+
+        // We can only move up if we are not at the top (index > 0)
+        if self.selected_index > 0 && self.selected_index < tasks_in_col.len() {
+            let current_task_ref = tasks_in_col[self.selected_index];
+            let target_task_ref = tasks_in_col[self.selected_index - 1];
+
+            // Find global indices
+            let current_global_idx = self
+                .tasks
+                .iter()
+                .position(|t| std::ptr::eq(t, current_task_ref));
+            let target_global_idx = self
+                .tasks
+                .iter()
+                .position(|t| std::ptr::eq(t, target_task_ref));
+
+            if let (Some(curr), Some(target)) = (current_global_idx, target_global_idx) {
+                self.tasks.swap(curr, target);
+                self.selected_index -= 1; // Follow the item visually
+                self.save();
+            }
+        }
+    }
+
+    pub fn move_task_down(&mut self) {
+        let tasks_in_col = self.get_tasks_in_column(self.active_column);
+
+        // We can only move down if we are not at the bottom
+        if !tasks_in_col.is_empty() && self.selected_index < tasks_in_col.len() - 1 {
+            let current_task_ref = tasks_in_col[self.selected_index];
+            let target_task_ref = tasks_in_col[self.selected_index + 1];
+
+            // Find global indices
+            let current_global_idx = self
+                .tasks
+                .iter()
+                .position(|t| std::ptr::eq(t, current_task_ref));
+            let target_global_idx = self
+                .tasks
+                .iter()
+                .position(|t| std::ptr::eq(t, target_task_ref));
+
+            if let (Some(curr), Some(target)) = (current_global_idx, target_global_idx) {
+                self.tasks.swap(curr, target);
+                self.selected_index += 1; // Follow the item visually
+                self.save();
+            }
         }
     }
 
