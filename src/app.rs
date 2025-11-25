@@ -24,6 +24,7 @@ pub struct App {
     pub input_mode: bool,
     pub input_buffer: String,
     pub is_editing: bool,
+    pub view_mode: bool,
 
     file_path: PathBuf,
 }
@@ -38,6 +39,7 @@ impl App {
             input_mode: false,
             input_buffer: String::new(),
             is_editing: false,
+            view_mode: false,
             file_path,
         }
     }
@@ -226,6 +228,21 @@ impl App {
                 Status::Done => Status::Todo,
             };
             self.save();
+        }
+    }
+
+    // --- VIEW DETAILS ---
+
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = !self.view_mode;
+    }
+
+    pub fn get_current_task_title(&self) -> String {
+        let tasks_in_col = self.get_tasks_in_column(self.active_column);
+        if let Some(task) = tasks_in_col.get(self.selected_index) {
+            task.title.clone()
+        } else {
+            String::from("No task selected")
         }
     }
 }

@@ -83,11 +83,48 @@ pub fn render(f: &mut Frame, app: &App) {
             .block(Block::default().borders(Borders::ALL).title(title));
         f.render_widget(input, chunks[2]);
     } else {
-        let help_text =
-            "q:Quit | n:New | e:Edit | d:Delete | Shift+↑/↓:Move | Enter:Next | ←/→/↑/↓:Nav";
+        let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move | Enter:Next | ←/→/↑/↓:Nav";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Gray))
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(help, chunks[2]);
     }
+
+    // 4. Details Popup (Draw on top of everything if view_mode is active)
+    if app.view_mode {
+        let block = Block::default()
+            .title("Task Details")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+
+        let text = app.get_current_task_title();
+        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
+
+        let area = centered_rect(60, 40, f.area()); // 60% width, 40% height
+
+        // Clear the area underneath the popup so background doesn't shine through
+        f.render_widget(Clear, area);
+        f.render_widget(paragraph, area);
+    }
+}
+
+/// Helper function to center a rect in the terminal
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
