@@ -25,6 +25,7 @@ pub struct App {
     pub input_buffer: String,
     pub is_editing: bool,
     pub view_mode: bool,
+    pub delete_mode: bool,
 
     file_path: PathBuf,
 }
@@ -40,6 +41,7 @@ impl App {
             input_buffer: String::new(),
             is_editing: false,
             view_mode: false,
+            delete_mode: false,
             file_path,
         }
     }
@@ -209,7 +211,21 @@ impl App {
         self.input_buffer.clear();
     }
 
-    pub fn delete_current_task(&mut self) {
+    /// Trigger the confirmation popup
+    pub fn prompt_delete(&mut self) {
+        // Only prompt if there is actually a task selected
+        if !self.get_tasks_in_column(self.active_column).is_empty() {
+            self.delete_mode = true;
+        }
+    }
+
+    /// Cancel deletion logic
+    pub fn cancel_delete(&mut self) {
+        self.delete_mode = false;
+    }
+
+    /// Actually delete the task (called after 'y')
+    pub fn confirm_delete(&mut self) {
         if let Some(idx) = self.get_selected_global_index() {
             self.tasks.remove(idx);
             self.save();
@@ -217,6 +233,7 @@ impl App {
                 self.selected_index -= 1;
             }
         }
+        self.delete_mode = false;
     }
 
     pub fn move_current_task(&mut self) {
