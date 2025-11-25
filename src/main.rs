@@ -56,10 +56,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                 match key.code {
                     KeyCode::Enter => app.submit_input(),
                     KeyCode::Esc => app.cancel_input(),
-                    KeyCode::Char(c) => app.input_buffer.push(c),
-                    KeyCode::Backspace => {
-                        app.input_buffer.pop();
-                    }
+                    KeyCode::Char(c) => app.enter_char(c),
+                    KeyCode::Backspace => app.delete_char(),
+                    KeyCode::Left => app.move_cursor_left(),
+                    KeyCode::Right => app.move_cursor_right(),
                     _ => {}
                 }
             }

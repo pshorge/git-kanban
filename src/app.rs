@@ -23,11 +23,12 @@ pub struct App {
     // Input related fields
     pub input_mode: bool,
     pub input_buffer: String,
+    pub cursor_position: usize,
     pub is_editing: bool,
     pub view_mode: bool,
     pub delete_mode: bool,
 
-    file_path: PathBuf,
+    pub file_path: PathBuf,
 }
 
 impl App {
@@ -39,6 +40,7 @@ impl App {
             selected_index: 0,
             input_mode: false,
             input_buffer: String::new(),
+            cursor_position: 0,
             is_editing: false,
             view_mode: false,
             delete_mode: false,
@@ -158,6 +160,44 @@ impl App {
         }
     }
 
+    // --- INPUT HANDLING WITH CURSOR ---
+
+    pub fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.cursor_position.saturating_sub(1);
+        self.cursor_position = self.clamp_cursor(cursor_moved_left);
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.cursor_position.saturating_add(1);
+        self.cursor_position = self.clamp_cursor(cursor_moved_right);
+    }
+
+    pub fn enter_char(&mut self, new_char: char) {
+        // Insert char at cursor position
+        // Note: This is O(n) which is fine for short titles
+        let mut chars: Vec<char> = self.input_buffer.chars().collect();
+        if self.cursor_position <= chars.len() {
+            chars.insert(self.cursor_position, new_char);
+            self.input_buffer = chars.into_iter().collect();
+            self.move_cursor_right();
+        }
+    }
+
+    pub fn delete_char(&mut self) {
+        if self.cursor_position > 0 {
+            let mut chars: Vec<char> = self.input_buffer.chars().collect();
+            if self.cursor_position <= chars.len() {
+                chars.remove(self.cursor_position - 1);
+                self.input_buffer = chars.into_iter().collect();
+                self.move_cursor_left();
+            }
+        }
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.input_buffer.chars().count())
+    }
+
     // --- ACTIONS ---
 
     /// Enter input mode to create a NEW task
@@ -165,6 +205,7 @@ impl App {
         self.input_mode = true;
         self.is_editing = false;
         self.input_buffer.clear();
+        self.cursor_position = 0;
     }
 
     /// Enter input mode to EDIT the selected task
@@ -174,6 +215,8 @@ impl App {
             self.input_buffer = task.title.clone();
             self.input_mode = true;
             self.is_editing = true;
+            // Set cursor to end of string
+            self.cursor_position = self.input_buffer.chars().count();
         }
     }
 
