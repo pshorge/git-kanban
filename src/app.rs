@@ -1,6 +1,7 @@
 use crate::io;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tui_textarea::TextArea;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum Status {
@@ -12,28 +13,37 @@ pub enum Status {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Task {
     pub title: String,
+    //ensures compatibility with old JSON files (adds empty string if missing)
+    #[serde(default)]
+    pub description: String,
     pub status: Status,
 }
 
-pub struct App {
+pub struct App<'a> {
     pub tasks: Vec<Task>,
     pub active_column: usize,
     pub selected_index: usize,
 
-    // Input related fields
-    pub input_mode: bool,
-    pub input_buffer: String,
-    pub cursor_position: usize,
-    pub is_editing: bool,
-    pub view_mode: bool,
-    pub delete_mode: bool,
+    // Modes
+    pub input_mode: bool,       // Simple line input (Title)
+    pub input_buffer: String,   // Buffer for title
+    pub cursor_position: usize, // Cursor for title
+    pub is_editing: bool,       // Context for title input
+
+    pub delete_mode: bool,    // Delete confirmation popup
+    pub edit_desc_mode: bool, // Unified Description View/Edit mode
 
     pub file_path: PathBuf,
+
+    pub description_editor: TextArea<'a>,
 }
 
-impl App {
+impl<'a> App<'a> {
     pub fn new(file_path: PathBuf) -> Self {
         let tasks = io::load_tasks(&file_path);
+
+        let textarea = TextArea::default();
+
         App {
             tasks,
             active_column: 0,
@@ -42,20 +52,19 @@ impl App {
             input_buffer: String::new(),
             cursor_position: 0,
             is_editing: false,
-            view_mode: false,
             delete_mode: false,
+            edit_desc_mode: false,
             file_path,
+            description_editor: textarea,
         }
     }
 
-    /// Helper: Saves state to disk
     fn save(&self) {
         if let Err(e) = io::save_tasks(&self.file_path, &self.tasks) {
             eprintln!("Error saving tasks: {}", e);
         }
     }
 
-    /// Helper: Gets tasks strictly for the current column view
     pub fn get_tasks_in_column(&self, col_idx: usize) -> Vec<&Task> {
         let status = match col_idx {
             0 => Status::Todo,
@@ -65,13 +74,10 @@ impl App {
         self.tasks.iter().filter(|t| t.status == status).collect()
     }
 
-    /// Helper: Finds the real index in self.tasks based on visual selection
     fn get_selected_global_index(&self) -> Option<usize> {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         let task_ref = tasks_in_col.get(self.selected_index)?;
 
-        // Find this task in the main vector.
-        // In a prod app, use UUIDs. Here we match title+status (simplified).
         self.tasks
             .iter()
             .position(|t| t.title == task_ref.title && t.status == task_ref.status)
@@ -110,25 +116,12 @@ impl App {
 
     pub fn move_task_up(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
-
-        // We can only move up if we are not at the top (index > 0)
         if self.selected_index > 0 && self.selected_index < tasks_in_col.len() {
-            let current_task_ref = tasks_in_col[self.selected_index];
-            let target_task_ref = tasks_in_col[self.selected_index - 1];
-
-            // Find global indices
-            let current_global_idx = self
-                .tasks
-                .iter()
-                .position(|t| std::ptr::eq(t, current_task_ref));
-            let target_global_idx = self
-                .tasks
-                .iter()
-                .position(|t| std::ptr::eq(t, target_task_ref));
-
-            if let (Some(curr), Some(target)) = (current_global_idx, target_global_idx) {
-                self.tasks.swap(curr, target);
-                self.selected_index -= 1; // Follow the item visually
+            let current = tasks_in_col[self.selected_index];
+            let target = tasks_in_col[self.selected_index - 1];
+            if let (Some(c), Some(t)) = (self.find_idx(current), self.find_idx(target)) {
+                self.tasks.swap(c, t);
+                self.selected_index -= 1;
                 self.save();
             }
         }
@@ -136,31 +129,22 @@ impl App {
 
     pub fn move_task_down(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
-
-        // We can only move down if we are not at the bottom
         if !tasks_in_col.is_empty() && self.selected_index < tasks_in_col.len() - 1 {
-            let current_task_ref = tasks_in_col[self.selected_index];
-            let target_task_ref = tasks_in_col[self.selected_index + 1];
-
-            // Find global indices
-            let current_global_idx = self
-                .tasks
-                .iter()
-                .position(|t| std::ptr::eq(t, current_task_ref));
-            let target_global_idx = self
-                .tasks
-                .iter()
-                .position(|t| std::ptr::eq(t, target_task_ref));
-
-            if let (Some(curr), Some(target)) = (current_global_idx, target_global_idx) {
-                self.tasks.swap(curr, target);
-                self.selected_index += 1; // Follow the item visually
+            let current = tasks_in_col[self.selected_index];
+            let target = tasks_in_col[self.selected_index + 1];
+            if let (Some(c), Some(t)) = (self.find_idx(current), self.find_idx(target)) {
+                self.tasks.swap(c, t);
+                self.selected_index += 1;
                 self.save();
             }
         }
     }
 
-    // --- INPUT HANDLING WITH CURSOR ---
+    fn find_idx(&self, task: &Task) -> Option<usize> {
+        self.tasks.iter().position(|t| std::ptr::eq(t, task))
+    }
+
+    // --- TITLE INPUT HANDLING ---
 
     pub fn move_cursor_left(&mut self) {
         let cursor_moved_left = self.cursor_position.saturating_sub(1);
@@ -173,8 +157,6 @@ impl App {
     }
 
     pub fn enter_char(&mut self, new_char: char) {
-        // Insert char at cursor position
-        // Note: This is O(n) which is fine for short titles
         let mut chars: Vec<char> = self.input_buffer.chars().collect();
         if self.cursor_position <= chars.len() {
             chars.insert(self.cursor_position, new_char);
@@ -198,9 +180,8 @@ impl App {
         new_cursor_pos.clamp(0, self.input_buffer.chars().count())
     }
 
-    // --- ACTIONS ---
+    // --- TITLE ACTIONS ---
 
-    /// Enter input mode to create a NEW task
     pub fn start_adding(&mut self) {
         self.input_mode = true;
         self.is_editing = false;
@@ -208,26 +189,22 @@ impl App {
         self.cursor_position = 0;
     }
 
-    /// Enter input mode to EDIT the selected task
     pub fn start_editing(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         if let Some(task) = tasks_in_col.get(self.selected_index) {
             self.input_buffer = task.title.clone();
             self.input_mode = true;
             self.is_editing = true;
-            // Set cursor to end of string
             self.cursor_position = self.input_buffer.chars().count();
         }
     }
 
-    /// Cancels input mode without saving
     pub fn cancel_input(&mut self) {
         self.input_mode = false;
         self.is_editing = false;
         self.input_buffer.clear();
     }
 
-    /// Finalizes input (Add New or Update Existing)
     pub fn submit_input(&mut self) {
         if self.input_buffer.trim().is_empty() {
             self.cancel_input();
@@ -235,15 +212,14 @@ impl App {
         }
 
         if self.is_editing {
-            // UPDATE EXISTING
             if let Some(idx) = self.get_selected_global_index() {
                 self.tasks[idx].title = self.input_buffer.trim().to_string();
                 self.save();
             }
         } else {
-            // ADD NEW
             self.tasks.push(Task {
                 title: self.input_buffer.trim().to_string(),
+                description: String::new(),
                 status: Status::Todo,
             });
             self.save();
@@ -254,20 +230,18 @@ impl App {
         self.input_buffer.clear();
     }
 
-    /// Trigger the confirmation popup
+    // --- DELETE ---
+
     pub fn prompt_delete(&mut self) {
-        // Only prompt if there is actually a task selected
         if !self.get_tasks_in_column(self.active_column).is_empty() {
             self.delete_mode = true;
         }
     }
 
-    /// Cancel deletion logic
     pub fn cancel_delete(&mut self) {
         self.delete_mode = false;
     }
 
-    /// Actually delete the task (called after 'y')
     pub fn confirm_delete(&mut self) {
         if let Some(idx) = self.get_selected_global_index() {
             self.tasks.remove(idx);
@@ -291,18 +265,28 @@ impl App {
         }
     }
 
-    // --- VIEW DETAILS ---
+    // --- UNIFIED DESCRIPTION EDITOR (VIEW + EDIT) ---
 
-    pub fn toggle_view_mode(&mut self) {
-        self.view_mode = !self.view_mode;
-    }
-
-    pub fn get_current_task_title(&self) -> String {
+    /// Opens the unified editor with the current description
+    pub fn open_description(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         if let Some(task) = tasks_in_col.get(self.selected_index) {
-            task.title.clone()
-        } else {
-            String::from("No task selected")
+            // Load existing description into TextArea (needs lines as Vec<String>)
+            let lines: Vec<String> = task.description.lines().map(|s| s.to_string()).collect();
+            self.description_editor = TextArea::new(lines);
+            self.edit_desc_mode = true;
         }
+    }
+
+    /// Saves the content of the editor back to the task and closes it
+    pub fn close_description(&mut self) {
+        // Join lines back into a single string
+        let new_desc = self.description_editor.lines().join("\n");
+
+        if let Some(idx) = self.get_selected_global_index() {
+            self.tasks[idx].description = new_desc;
+            self.save();
+        }
+        self.edit_desc_mode = false;
     }
 }

@@ -1,22 +1,27 @@
-use anyhow::{Context, Result};
-use std::{fs, path::PathBuf};
 use crate::app::Task;
+use anyhow::Result;
+use std::{fs, path::PathBuf};
 
-/// Finds the .git directory in current or parent directories
-pub fn find_git_dir() -> Result<PathBuf> {
-    let mut current_dir = std::env::current_dir()?;
+/// Determines where to save data.
+pub fn find_storage_path() -> Result<PathBuf> {
+    let current_dir = std::env::current_dir()?;
+    let mut search_dir = current_dir.clone();
+
+    // 1. Try to find .git upstream
     loop {
-        let git_path = current_dir.join(".git");
+        let git_path = search_dir.join(".git");
         if git_path.exists() && git_path.is_dir() {
-            return Ok(git_path);
+            return Ok(git_path.join("git-kanban.json"));
         }
-        if !current_dir.pop() {
-            anyhow::bail!("Not inside a git repository!");
+        if !search_dir.pop() {
+            break;
         }
     }
+
+    // 2. Fallback
+    Ok(current_dir.join(".kanban.json"))
 }
 
-/// Loads tasks from the JSON file
 pub fn load_tasks(file_path: &PathBuf) -> Vec<Task> {
     if file_path.exists() {
         let content = fs::read_to_string(file_path).unwrap_or_default();
@@ -26,9 +31,8 @@ pub fn load_tasks(file_path: &PathBuf) -> Vec<Task> {
     }
 }
 
-/// Saves tasks to the JSON file
 pub fn save_tasks(file_path: &PathBuf, tasks: &[Task]) -> Result<()> {
     let json = serde_json::to_string_pretty(tasks)?;
-    fs::write(file_path, json).context("Failed to write kanban file")?;
+    fs::write(file_path, json)?;
     Ok(())
 }
