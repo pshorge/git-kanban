@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, EditFocus};
 use ratatui::{prelude::*, widgets::*};
 
 pub fn render(f: &mut Frame, app: &App) {
@@ -14,11 +14,10 @@ pub fn render(f: &mut Frame, app: &App) {
     // 1. Header
     let path_str = app.file_path.to_string_lossy();
     let title_text = if path_str.contains(".git") {
-        "Git Kanban (Project Mode)"
+        "Git Kanban (Project)"
     } else {
-        "Git Kanban (Standalone Mode)"
+        "Git Kanban (Local)"
     };
-
     let title = Paragraph::new(title_text)
         .style(
             Style::default()
@@ -37,25 +36,19 @@ pub fn render(f: &mut Frame, app: &App) {
             Constraint::Percentage(33),
         ])
         .split(chunks[1]);
-
     let column_titles = ["TODO", "DOING", "DONE"];
-
     for i in 0..3 {
         let tasks = app.get_tasks_in_column(i);
-
         let items: Vec<ListItem> = tasks
             .iter()
             .map(|t| ListItem::new(format!("• {}", t.title)))
             .collect();
-
-        let border_style =
-            if app.active_column == i && !app.input_mode && !app.delete_mode && !app.edit_desc_mode
-            {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::White)
-            };
-
+        let is_modal = app.input_mode || app.delete_mode || app.view_mode || app.edit_mode;
+        let border_style = if app.active_column == i && !is_modal {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::White)
+        };
         let list = List::new(items)
             .block(
                 Block::default()
@@ -68,7 +61,6 @@ pub fn render(f: &mut Frame, app: &App) {
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD),
             );
-
         if app.active_column == i {
             let mut state = ListState::default();
             state.select(Some(app.selected_index));
@@ -80,70 +72,134 @@ pub fn render(f: &mut Frame, app: &App) {
 
     // 3. Footer
     if app.input_mode {
-        let title = if app.is_editing {
-            "Edit Title"
-        } else {
-            "New Task"
-        };
-
-        let block = Block::default().borders(Borders::ALL).title(title);
-        let inner_area = block.inner(chunks[2]);
-
+        let block = Block::default().borders(Borders::ALL).title("New Task");
+        let inner = block.inner(chunks[2]);
         let input = Paragraph::new(app.input_buffer.as_str())
             .style(Style::default().fg(Color::Green))
             .block(block);
-
         f.render_widget(input, chunks[2]);
-
-        let cursor_x = inner_area.x + app.cursor_position as u16;
-        let cursor_y = inner_area.y;
-
-        f.set_cursor_position(Position::new(cursor_x, cursor_y));
+        let cx = inner.x + app.cursor_position as u16;
+        let cy = inner.y;
+        f.set_cursor_position(Position::new(cx, cy));
     } else {
-        let help_text = "q:Quit | n:New | e:Edit Title | v:Desc | d:Delete | Shift+↑/↓:Move";
+        let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Gray))
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(help, chunks[2]);
     }
 
-    // 4. Delete Confirmation
-    if app.delete_mode {
+    // 4. VIEW MODE (Read Only)
+    if app.view_mode {
+        let area = centered_rect(60, 60, f.area());
+        f.render_widget(Clear, area);
+
         let block = Block::default()
-            .title("Confirmation")
+            .title(" Task Details (Esc to close) ")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::DarkGray));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .split(inner);
+        let (title_str, desc_str) = app.get_current_task_info();
+
+        let title_p = Paragraph::new(title_str).style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::Cyan),
+        );
+        f.render_widget(title_p, layout[0]);
+
+        let desc_text = if desc_str.is_empty() {
+            "(No description)"
+        } else {
+            &desc_str
+        };
+        let desc_p = Paragraph::new(desc_text).wrap(Wrap { trim: false });
+        let divider = Block::default().borders(Borders::TOP);
+        f.render_widget(divider, layout[1]);
+        let desc_area = Layout::default()
+            .constraints([Constraint::Min(1)])
+            .margin(1)
+            .split(layout[1])[0];
+        f.render_widget(desc_p, desc_area);
+    }
+
+    // 5. EDIT MODE
+    if app.edit_mode {
+        let area = centered_rect(80, 80, f.area());
+        f.render_widget(Clear, area);
+
+        let main_block = Block::default()
+            .title(" Edit Task (Tab: Switch | Ctrl+S: Save | Esc: Cancel) ")
+            .borders(Borders::ALL)
+            .style(Style::default().bg(Color::Black));
+        let inner = main_block.inner(area);
+        f.render_widget(main_block, area);
+
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(1)])
+            .split(inner);
+
+        // Title Input (Top)
+        let title_color = if app.edit_focus == EditFocus::Title {
+            Color::Green
+        } else {
+            Color::White
+        };
+        let title_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Title ")
+            .style(Style::default().fg(title_color));
+        let title_inner = title_block.inner(layout[0]);
+        let title_input = Paragraph::new(app.edit_title_buffer.as_str()).block(title_block);
+        f.render_widget(title_input, layout[0]);
+
+        // Description Input (Bottom - TextArea)
+        let desc_color = if app.edit_focus == EditFocus::Description {
+            Color::Green
+        } else {
+            Color::White
+        };
+        let mut editor = app.description_editor.clone();
+        editor.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Description ")
+                .style(Style::default().fg(desc_color)),
+        );
+        f.render_widget(&editor, layout[1]);
+
+        // Manual cursor for Title
+        if app.edit_focus == EditFocus::Title {
+            let cx = title_inner.x + app.edit_cursor_pos as u16;
+            let cy = title_inner.y;
+            f.set_cursor_position(Position::new(cx, cy));
+        }
+    }
+
+    // 6. Delete Confirmation
+    if app.delete_mode {
+        let area = centered_rect(30, 15, f.area());
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .title("Confirm")
             .borders(Borders::ALL)
             .style(Style::default().fg(Color::Red).bg(Color::Black));
-
         let text = vec![
             Line::from("Delete task?"),
             Line::from(""),
             Line::from("Y / N"),
         ];
-
-        let paragraph = Paragraph::new(text)
+        let p = Paragraph::new(text)
             .block(block)
             .alignment(Alignment::Center);
-
-        let area = centered_rect(30, 15, f.area());
-        f.render_widget(Clear, area);
-        f.render_widget(paragraph, area);
-    }
-
-    // 5. UNIFIED DESCRIPTION EDITOR / VIEWER
-    if app.edit_desc_mode {
-        let area = centered_rect(80, 80, f.area());
-        f.render_widget(Clear, area);
-
-        let mut editor = app.description_editor.clone();
-
-        editor.set_block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Description (Esc to Save & Close) ")
-                .style(Style::default().fg(Color::Green).bg(Color::Black)),
-        );
-
-        f.render_widget(&editor, area);
+        f.render_widget(p, area);
     }
 }
 
@@ -156,7 +212,6 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_y) / 2),
         ])
         .split(r);
-
     Layout::default()
         .direction(Direction::Horizontal)
         .constraints([

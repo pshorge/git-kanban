@@ -13,10 +13,16 @@ pub enum Status {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Task {
     pub title: String,
-    //ensures compatibility with old JSON files (adds empty string if missing)
     #[serde(default)]
     pub description: String,
     pub status: Status,
+}
+
+// Enum to track focus in the split edit window
+#[derive(Debug, PartialEq)]
+pub enum EditFocus {
+    Title,
+    Description,
 }
 
 pub struct App<'a> {
@@ -24,36 +30,47 @@ pub struct App<'a> {
     pub active_column: usize,
     pub selected_index: usize,
 
-    // Modes
-    pub input_mode: bool,       // Simple line input (Title)
-    pub input_buffer: String,   // Buffer for title
-    pub cursor_position: usize, // Cursor for title
-    pub is_editing: bool,       // Context for title input
+    // --- MODES ---
+    pub input_mode: bool,       // Footer Quick Add
+    pub input_buffer: String,   // Footer Buffer
+    pub cursor_position: usize, // Footer Cursor
 
-    pub delete_mode: bool,    // Delete confirmation popup
-    pub edit_desc_mode: bool, // Unified Description View/Edit mode
+    pub delete_mode: bool, // Confirmation popup
+
+    pub view_mode: bool, // Read-only popup
+
+    pub edit_mode: bool,           // Split Edit popup
+    pub edit_focus: EditFocus,     // Which part is active?
+    pub edit_title_buffer: String, // Temporary buffer for title editing
+    pub edit_cursor_pos: usize,    // Cursor for title editing
 
     pub file_path: PathBuf,
-
     pub description_editor: TextArea<'a>,
 }
 
 impl<'a> App<'a> {
     pub fn new(file_path: PathBuf) -> Self {
         let tasks = io::load_tasks(&file_path);
-
         let textarea = TextArea::default();
 
         App {
             tasks,
             active_column: 0,
             selected_index: 0,
+
             input_mode: false,
             input_buffer: String::new(),
             cursor_position: 0,
-            is_editing: false,
+
             delete_mode: false,
-            edit_desc_mode: false,
+
+            view_mode: false,
+
+            edit_mode: false,
+            edit_focus: EditFocus::Title,
+            edit_title_buffer: String::new(),
+            edit_cursor_pos: 0,
+
             file_path,
             description_editor: textarea,
         }
@@ -65,6 +82,7 @@ impl<'a> App<'a> {
         }
     }
 
+    // --- HELPERS ---
     pub fn get_tasks_in_column(&self, col_idx: usize) -> Vec<&Task> {
         let status = match col_idx {
             0 => Status::Todo,
@@ -77,42 +95,35 @@ impl<'a> App<'a> {
     fn get_selected_global_index(&self) -> Option<usize> {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         let task_ref = tasks_in_col.get(self.selected_index)?;
-
         self.tasks
             .iter()
             .position(|t| t.title == task_ref.title && t.status == task_ref.status)
     }
 
-    // --- NAVIGATION ---
-
+    // --- NAVIGATION & REORDERING ---
     pub fn next_column(&mut self) {
         if self.active_column < 2 {
             self.active_column += 1;
             self.selected_index = 0;
         }
     }
-
     pub fn prev_column(&mut self) {
         if self.active_column > 0 {
             self.active_column -= 1;
             self.selected_index = 0;
         }
     }
-
     pub fn next_item(&mut self) {
         let count = self.get_tasks_in_column(self.active_column).len();
         if count > 0 && self.selected_index < count - 1 {
             self.selected_index += 1;
         }
     }
-
     pub fn prev_item(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
         }
     }
-
-    // --- REORDERING ---
 
     pub fn move_task_up(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
@@ -126,7 +137,6 @@ impl<'a> App<'a> {
             }
         }
     }
-
     pub fn move_task_down(&mut self) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         if !tasks_in_col.is_empty() && self.selected_index < tasks_in_col.len() - 1 {
@@ -139,109 +149,71 @@ impl<'a> App<'a> {
             }
         }
     }
-
     fn find_idx(&self, task: &Task) -> Option<usize> {
         self.tasks.iter().position(|t| std::ptr::eq(t, task))
     }
 
-    // --- TITLE INPUT HANDLING ---
-
-    pub fn move_cursor_left(&mut self) {
-        let cursor_moved_left = self.cursor_position.saturating_sub(1);
-        self.cursor_position = self.clamp_cursor(cursor_moved_left);
-    }
-
-    pub fn move_cursor_right(&mut self) {
-        let cursor_moved_right = self.cursor_position.saturating_add(1);
-        self.cursor_position = self.clamp_cursor(cursor_moved_right);
-    }
-
-    pub fn enter_char(&mut self, new_char: char) {
-        let mut chars: Vec<char> = self.input_buffer.chars().collect();
-        if self.cursor_position <= chars.len() {
-            chars.insert(self.cursor_position, new_char);
-            self.input_buffer = chars.into_iter().collect();
-            self.move_cursor_right();
-        }
-    }
-
-    pub fn delete_char(&mut self) {
-        if self.cursor_position > 0 {
-            let mut chars: Vec<char> = self.input_buffer.chars().collect();
-            if self.cursor_position <= chars.len() {
-                chars.remove(self.cursor_position - 1);
-                self.input_buffer = chars.into_iter().collect();
-                self.move_cursor_left();
-            }
-        }
-    }
-
-    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
-        new_cursor_pos.clamp(0, self.input_buffer.chars().count())
-    }
-
-    // --- TITLE ACTIONS ---
-
+    // --- FOOTER INPUT ---
     pub fn start_adding(&mut self) {
         self.input_mode = true;
-        self.is_editing = false;
         self.input_buffer.clear();
         self.cursor_position = 0;
     }
-
-    pub fn start_editing(&mut self) {
-        let tasks_in_col = self.get_tasks_in_column(self.active_column);
-        if let Some(task) = tasks_in_col.get(self.selected_index) {
-            self.input_buffer = task.title.clone();
-            self.input_mode = true;
-            self.is_editing = true;
-            self.cursor_position = self.input_buffer.chars().count();
-        }
-    }
-
     pub fn cancel_input(&mut self) {
         self.input_mode = false;
-        self.is_editing = false;
-        self.input_buffer.clear();
     }
-
     pub fn submit_input(&mut self) {
         if self.input_buffer.trim().is_empty() {
             self.cancel_input();
             return;
         }
-
-        if self.is_editing {
-            if let Some(idx) = self.get_selected_global_index() {
-                self.tasks[idx].title = self.input_buffer.trim().to_string();
-                self.save();
-            }
-        } else {
-            self.tasks.push(Task {
-                title: self.input_buffer.trim().to_string(),
-                description: String::new(),
-                status: Status::Todo,
-            });
-            self.save();
-        }
-
+        self.tasks.push(Task {
+            title: self.input_buffer.trim().to_string(),
+            description: String::new(),
+            status: Status::Todo,
+        });
+        self.save();
         self.input_mode = false;
-        self.is_editing = false;
-        self.input_buffer.clear();
+    }
+    // Manual cursor logic
+    pub fn enter_char_footer(&mut self, c: char) {
+        let mut chars: Vec<char> = self.input_buffer.chars().collect();
+        if self.cursor_position <= chars.len() {
+            chars.insert(self.cursor_position, c);
+            self.input_buffer = chars.into_iter().collect();
+            self.cursor_position += 1;
+        }
+    }
+    pub fn delete_char_footer(&mut self) {
+        if self.cursor_position > 0 {
+            let mut chars: Vec<char> = self.input_buffer.chars().collect();
+            if self.cursor_position <= chars.len() {
+                chars.remove(self.cursor_position - 1);
+                self.input_buffer = chars.into_iter().collect();
+                self.cursor_position -= 1;
+            }
+        }
+    }
+    pub fn move_cursor_left_footer(&mut self) {
+        if self.cursor_position > 0 {
+            self.cursor_position -= 1;
+        }
+    }
+    pub fn move_cursor_right_footer(&mut self) {
+        if self.cursor_position < self.input_buffer.chars().count() {
+            self.cursor_position += 1;
+        }
     }
 
     // --- DELETE ---
-
     pub fn prompt_delete(&mut self) {
         if !self.get_tasks_in_column(self.active_column).is_empty() {
             self.delete_mode = true;
         }
     }
-
     pub fn cancel_delete(&mut self) {
         self.delete_mode = false;
     }
-
     pub fn confirm_delete(&mut self) {
         if let Some(idx) = self.get_selected_global_index() {
             self.tasks.remove(idx);
@@ -252,7 +224,6 @@ impl<'a> App<'a> {
         }
         self.delete_mode = false;
     }
-
     pub fn move_current_task(&mut self) {
         if let Some(idx) = self.get_selected_global_index() {
             let task = &mut self.tasks[idx];
@@ -265,28 +236,82 @@ impl<'a> App<'a> {
         }
     }
 
-    // --- UNIFIED DESCRIPTION EDITOR (VIEW + EDIT) ---
-
-    /// Opens the unified editor with the current description
-    pub fn open_description(&mut self) {
+    // --- VIEW MODE (Read Only) ---
+    pub fn open_view_mode(&mut self) {
+        if self.get_tasks_in_column(self.active_column).is_empty() {
+            return;
+        }
+        self.view_mode = true;
+    }
+    pub fn close_view_mode(&mut self) {
+        self.view_mode = false;
+    }
+    pub fn get_current_task_info(&self) -> (String, String) {
         let tasks_in_col = self.get_tasks_in_column(self.active_column);
         if let Some(task) = tasks_in_col.get(self.selected_index) {
-            // Load existing description into TextArea (needs lines as Vec<String>)
-            let lines: Vec<String> = task.description.lines().map(|s| s.to_string()).collect();
-            self.description_editor = TextArea::new(lines);
-            self.edit_desc_mode = true;
+            (task.title.clone(), task.description.clone())
+        } else {
+            (String::new(), String::new())
         }
     }
 
-    /// Saves the content of the editor back to the task and closes it
-    pub fn close_description(&mut self) {
-        // Join lines back into a single string
-        let new_desc = self.description_editor.lines().join("\n");
-
+    // --- EDIT MODE ---
+    pub fn open_edit_mode(&mut self) {
         if let Some(idx) = self.get_selected_global_index() {
+            // Load title into manual buffer
+            let title = self.tasks[idx].title.clone();
+            let description = self.tasks[idx].description.clone();
+
+            self.edit_title_buffer = title;
+            self.edit_cursor_pos = self.edit_title_buffer.chars().count();
+
+            // Load description into TextArea
+            let lines: Vec<String> = description.lines().map(|s| s.to_string()).collect();
+            self.description_editor = TextArea::new(lines);
+
+            self.edit_focus = EditFocus::Title;
+            self.edit_mode = true;
+        }
+    }
+    pub fn close_edit_mode(&mut self) {
+        self.edit_mode = false;
+    }
+    pub fn toggle_edit_focus(&mut self) {
+        self.edit_focus = match self.edit_focus {
+            EditFocus::Title => EditFocus::Description,
+            EditFocus::Description => EditFocus::Title,
+        };
+    }
+    pub fn save_edit_changes(&mut self) {
+        if self.edit_title_buffer.trim().is_empty() {
+            return;
+        } // Prevent empty title
+        let new_desc = self.description_editor.lines().join("\n");
+        if let Some(idx) = self.get_selected_global_index() {
+            self.tasks[idx].title = self.edit_title_buffer.trim().to_string();
             self.tasks[idx].description = new_desc;
             self.save();
         }
-        self.edit_desc_mode = false;
+        self.edit_mode = false;
+    }
+
+    // Manual Title Editing logic
+    pub fn enter_char_edit_title(&mut self, c: char) {
+        let mut chars: Vec<char> = self.edit_title_buffer.chars().collect();
+        if self.edit_cursor_pos <= chars.len() {
+            chars.insert(self.edit_cursor_pos, c);
+            self.edit_title_buffer = chars.into_iter().collect();
+            self.edit_cursor_pos += 1;
+        }
+    }
+    pub fn delete_char_edit_title(&mut self) {
+        if self.edit_cursor_pos > 0 {
+            let mut chars: Vec<char> = self.edit_title_buffer.chars().collect();
+            if self.edit_cursor_pos <= chars.len() {
+                chars.remove(self.edit_cursor_pos - 1);
+                self.edit_title_buffer = chars.into_iter().collect();
+                self.edit_cursor_pos -= 1;
+            }
+        }
     }
 }
