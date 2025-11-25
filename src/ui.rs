@@ -1,5 +1,5 @@
-use ratatui::{prelude::*, widgets::*};
 use crate::app::App;
+use ratatui::{prelude::*, widgets::*};
 
 pub fn render(f: &mut Frame, app: &App) {
     // Layout: Header, Columns, Footer
@@ -14,7 +14,11 @@ pub fn render(f: &mut Frame, app: &App) {
 
     // 1. Header
     let title = Paragraph::new("Git Kanban (Local .git storage)")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
 
@@ -45,8 +49,17 @@ pub fn render(f: &mut Frame, app: &App) {
         };
 
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(column_titles[i]).border_style(border_style))
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(column_titles[i])
+                    .border_style(border_style),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         if app.active_column == i {
             let mut state = ListState::default();
@@ -59,14 +72,19 @@ pub fn render(f: &mut Frame, app: &App) {
 
     // 3. Footer / Input
     if app.input_mode {
-        let title = if app.is_editing { "Edit Task" } else { "New Task" };
+        let title = if app.is_editing {
+            "Edit Task"
+        } else {
+            "New Task"
+        };
 
         let input = Paragraph::new(app.input_buffer.as_str())
             .style(Style::default().fg(Color::Green))
             .block(Block::default().borders(Borders::ALL).title(title));
         f.render_widget(input, chunks[2]);
     } else {
-        let help_text = "q:Quit | n:New | e:Edit | d:Delete | Enter:Move | ←/→/↑/↓:Nav";
+        let help_text =
+            "q:Quit | n:New | e:Edit | d:Delete | Shift+↑/↓:Move | Enter:Next | ←/→/↑/↓:Nav";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Gray))
             .block(Block::default().borders(Borders::ALL));

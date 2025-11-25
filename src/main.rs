@@ -2,18 +2,19 @@ mod app;
 mod io;
 mod ui;
 
+use crate::app::App;
 use anyhow::{Context, Result};
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{prelude::*, Terminal};
-use crate::app::App;
+use ratatui::{Terminal, prelude::*};
 
 fn main() -> Result<()> {
     // 1. Setup paths
-    let git_dir = io::find_git_dir().context("Could not find .git directory. Run this inside a git repo.")?;
+    let git_dir =
+        io::find_git_dir().context("Could not find .git directory. Run this inside a git repo.")?;
     let data_path = git_dir.join("git-kanban.json");
 
     // 2. Setup Terminal
@@ -55,15 +56,27 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     KeyCode::Enter => app.submit_input(),
                     KeyCode::Esc => app.cancel_input(),
                     KeyCode::Char(c) => app.input_buffer.push(c),
-                    KeyCode::Backspace => { app.input_buffer.pop(); },
+                    KeyCode::Backspace => {
+                        app.input_buffer.pop();
+                    }
                     _ => {}
                 }
             } else {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('n') => app.start_adding(),
-                    KeyCode::Char('e') => app.start_editing(), 
+                    KeyCode::Char('e') => app.start_editing(),
                     KeyCode::Char('d') => app.delete_current_task(),
+
+                    // Reordering with Shift
+                    KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        app.move_task_up()
+                    }
+                    KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        app.move_task_down()
+                    }
+
+                    // Standard Navigation
                     KeyCode::Left => app.prev_column(),
                     KeyCode::Right => app.next_column(),
                     KeyCode::Up => app.prev_item(),
