@@ -13,7 +13,14 @@ pub fn render(f: &mut Frame, app: &App) {
         .split(f.area());
 
     // 1. Header
-    let title = Paragraph::new("Git Kanban (Local .git storage)")
+    let path_str = app.file_path.to_string_lossy();
+    let title_text = if path_str.contains(".git") {
+        "Git Kanban (Project Mode)"
+    } else {
+        "Git Kanban (Standalone Mode)"
+    };
+
+    let title = Paragraph::new(title_text)
         .style(
             Style::default()
                 .fg(Color::Cyan)
@@ -42,7 +49,7 @@ pub fn render(f: &mut Frame, app: &App) {
             .map(|t| ListItem::new(format!("• {}", t.title)))
             .collect();
 
-        let border_style = if app.active_column == i && !app.input_mode {
+        let border_style = if app.active_column == i && !app.input_mode && !app.delete_mode {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(Color::White)
@@ -70,76 +77,77 @@ pub fn render(f: &mut Frame, app: &App) {
         }
     }
 
-    // 3. Footer / Input
+    // 3. Footer
     if app.input_mode {
         let title = if app.is_editing {
-            "Edit Task"
+            "Edit Title"
         } else {
             "New Task"
         };
 
+        // Create the block first to calculate inner area
+        let block = Block::default().borders(Borders::ALL).title(title);
+        let inner_area = block.inner(chunks[2]);
+
         let input = Paragraph::new(app.input_buffer.as_str())
             .style(Style::default().fg(Color::Green))
-            .block(Block::default().borders(Borders::ALL).title(title));
+            .block(block);
+
         f.render_widget(input, chunks[2]);
+
+        // Calculate cursor position based on app.cursor_position
+        let cursor_x = inner_area.x + app.cursor_position as u16;
+        let cursor_y = inner_area.y;
+
+        f.set_cursor_position(Position::new(cursor_x, cursor_y));
     } else {
-        let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move | Enter:Next | ←/→/↑/↓:Nav";
+        let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Gray))
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(help, chunks[2]);
     }
 
-    // 4. Details Popup (Draw on top of everything if view_mode is active)
+    // 4. Details Popup
     if app.view_mode {
         let block = Block::default()
             .title("Task Details")
             .borders(Borders::ALL)
             .style(Style::default().bg(Color::DarkGray).fg(Color::White));
 
+        // Placeholder for now
         let text = app.get_current_task_title();
         let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
 
-        let area = centered_rect(60, 40, f.area()); // 60% width, 40% height
-
-        // Clear the area underneath the popup so background doesn't shine through
+        let area = centered_rect(60, 40, f.area());
         f.render_widget(Clear, area);
         f.render_widget(paragraph, area);
     }
 
-    // 5. Delete Confirmation Popup (Draw on top if delete_mode is active)
+    // 5. Delete Confirmation
     if app.delete_mode {
         let block = Block::default()
             .title("Confirmation")
             .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Red).bg(Color::Black)); // Red border for warning
+            .style(Style::default().fg(Color::Red).bg(Color::Black));
 
         let text = vec![
-            Line::from("Are you sure you want to delete this task?"),
+            Line::from("Delete task?"),
             Line::from(""),
-            Line::from(vec![
-                Span::styled(
-                    "Y",
-                    Style::default().add_modifier(Modifier::BOLD).fg(Color::Red),
-                ),
-                Span::raw(" to confirm / "),
-                Span::styled("N", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to cancel"),
-            ]),
+            Line::from("Y / N"),
         ];
 
         let paragraph = Paragraph::new(text)
             .block(block)
             .alignment(Alignment::Center);
 
-        let area = centered_rect(40, 20, f.area()); // Smaller popup
-
+        let area = centered_rect(30, 15, f.area());
         f.render_widget(Clear, area);
         f.render_widget(paragraph, area);
     }
 }
 
-/// Helper function to center a rect in the terminal
+// Helper
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
