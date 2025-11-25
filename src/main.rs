@@ -2,7 +2,7 @@ mod app;
 mod io;
 mod ui;
 
-use crate::app::App;
+use crate::app::{App, EditFocus};
 use anyhow::Result;
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -33,7 +33,6 @@ fn main() -> Result<()> {
     if let Err(err) = res {
         println!("{:?}", err);
     }
-
     Ok(())
 }
 
@@ -42,30 +41,51 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            // Priority 1: Unified Description Editor
-            if app.edit_desc_mode {
+            // 1. Edit Mode
+            if app.edit_mode {
                 match key.code {
-                    // Esc saves and closes (easy read/edit flow)
-                    KeyCode::Esc => app.close_description(),
-                    _ => {
-                        // Pass key to the tui-textarea widget
-                        app.description_editor.input(key);
+                    KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.save_edit_changes()
                     }
+                    KeyCode::Esc => app.close_edit_mode(),
+                    KeyCode::Tab => app.toggle_edit_focus(),
+
+                    // Input based on focus
+                    _ => match app.edit_focus {
+                        EditFocus::Title => match key.code {
+                            KeyCode::Char(c) => app.enter_char_edit_title(c),
+                            KeyCode::Backspace => app.delete_char_edit_title(),
+                            KeyCode::Enter => app.toggle_edit_focus(), // Enter moves to desc
+                            _ => {}
+                        },
+                        EditFocus::Description => {
+                            app.description_editor.input(key);
+                        }
+                    },
                 }
             }
-            // Priority 2: Title Input Mode
+            // 2. View Mode (Read Only)
+            else if app.view_mode {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('q') | KeyCode::Enter => {
+                        app.close_view_mode()
+                    }
+                    _ => {}
+                }
+            }
+            // 3. Quick Add (Footer)
             else if app.input_mode {
                 match key.code {
                     KeyCode::Enter => app.submit_input(),
                     KeyCode::Esc => app.cancel_input(),
-                    KeyCode::Char(c) => app.enter_char(c),
-                    KeyCode::Backspace => app.delete_char(),
-                    KeyCode::Left => app.move_cursor_left(),
-                    KeyCode::Right => app.move_cursor_right(),
+                    KeyCode::Char(c) => app.enter_char_footer(c),
+                    KeyCode::Backspace => app.delete_char_footer(),
+                    KeyCode::Left => app.move_cursor_left_footer(),
+                    KeyCode::Right => app.move_cursor_right_footer(),
                     _ => {}
                 }
             }
-            // Priority 3: Delete Confirmation
+            // 4. Delete Confirm
             else if app.delete_mode {
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Enter => app.confirm_delete(),
@@ -73,19 +93,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     _ => {}
                 }
             }
-            // Priority 4: Normal Navigation
+            // 5. Navigation
             else {
                 match key.code {
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('n') => app.start_adding(),
-                    KeyCode::Char('e') => app.start_editing(),
-
-                    // 'v' now opens the unified editor/viewer
-                    KeyCode::Char('v') => app.open_description(),
-
+                    KeyCode::Char('e') => app.open_edit_mode(),
+                    KeyCode::Char('v') => app.open_view_mode(),
                     KeyCode::Char('d') => app.prompt_delete(),
 
-                    // Reordering with Shift
                     KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
                         app.move_task_up()
                     }
@@ -93,7 +109,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                         app.move_task_down()
                     }
 
-                    // Standard Navigation
                     KeyCode::Left => app.prev_column(),
                     KeyCode::Right => app.next_column(),
                     KeyCode::Up => app.prev_item(),
