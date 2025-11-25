@@ -2,7 +2,7 @@
 
 A lightweight, terminal-based (TUI) Kanban board built with **Rust**. 
 
-It is designed to keep your tasks private and local. It works seamlessly inside Git repositories (storing data in `.git/`).
+It is designed to keep your tasks private and local. It works seamlessly inside Git repositories (storing data in `.git/`) or as a standalone task manager in any directory.
 
 ![Git Kanban Demo](assets/demo.png)
 
@@ -11,11 +11,12 @@ It is designed to keep your tasks private and local. It works seamlessly inside 
 - **🔒 Local & Private**:
   - **Project Mode**: If run inside a git repo, tasks are saved in `.git/git-kanban.json` (not committed to history).
   - **Standalone Mode**: If run elsewhere, tasks are saved in `.kanban.json` (hidden file).
+- **📝 Multi-line Descriptions**: Integrated full-screen editor for detailed notes (powered by `tui-textarea`).
 - **✏️ Full CRUD**: Create, Read, Update, and Delete tasks.
-- **🛡️ Safety First**: Confirmation modal before deleting tasks.
 - **↕️ Reordering**: Move tasks up and down within a column using `Shift + ↑/↓`.
-- **👀 Details View**: View full text of long tasks in a popup modal.
-- **⚡ Blazing Fast**: Written in Rust using `ratatui` and `crossterm`.
+- **🛡️ Safety First**: Confirmation modal before deleting tasks.
+- **✨ Better UX**: Visual cursor support during text input.
+- **⚡ Blazing Fast**: Written in Rust using `ratatui`.
 
 ## 📦 Installation
 
