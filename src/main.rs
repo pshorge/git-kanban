@@ -3,8 +3,8 @@ mod io;
 mod ui;
 
 use crate::app::App;
-use anyhow::{Context, Result};
-use crossterm::{
+use anyhow::Result;
+use ratatui::crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -12,25 +12,16 @@ use crossterm::{
 use ratatui::{Terminal, prelude::*};
 
 fn main() -> Result<()> {
-    // 1. Setup paths
-    let git_dir =
-        io::find_git_dir().context("Could not find .git directory. Run this inside a git repo.")?;
-    let data_path = git_dir.join("git-kanban.json");
-
-    // 2. Setup Terminal
+    let data_path = io::find_storage_path()?;
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // 3. Initialize App
     let mut app = App::new(data_path);
-
-    // 4. Run Loop
     let res = run_app(&mut terminal, &mut app);
 
-    // 5. Restore Terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -51,8 +42,19 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            // Priority 1: Input Mode
-            if app.input_mode {
+            // Priority 1: Unified Description Editor
+            if app.edit_desc_mode {
+                match key.code {
+                    // Esc saves and closes (easy read/edit flow)
+                    KeyCode::Esc => app.close_description(),
+                    _ => {
+                        // Pass key to the tui-textarea widget
+                        app.description_editor.input(key);
+                    }
+                }
+            }
+            // Priority 2: Title Input Mode
+            else if app.input_mode {
                 match key.code {
                     KeyCode::Enter => app.submit_input(),
                     KeyCode::Esc => app.cancel_input(),
@@ -63,20 +65,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     _ => {}
                 }
             }
-            // Priority 2: Delete Confirmation Mode (NEW)
+            // Priority 3: Delete Confirmation
             else if app.delete_mode {
                 match key.code {
                     KeyCode::Char('y') | KeyCode::Enter => app.confirm_delete(),
                     KeyCode::Char('n') | KeyCode::Char('q') | KeyCode::Esc => app.cancel_delete(),
-                    _ => {}
-                }
-            }
-            // Priority 3: View Mode (Popup active)
-            else if app.view_mode {
-                match key.code {
-                    KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('q') | KeyCode::Enter => {
-                        app.toggle_view_mode()
-                    }
                     _ => {}
                 }
             }
@@ -86,7 +79,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     KeyCode::Char('q') => return Ok(()),
                     KeyCode::Char('n') => app.start_adding(),
                     KeyCode::Char('e') => app.start_editing(),
-                    KeyCode::Char('v') => app.toggle_view_mode(),
+
+                    // 'v' now opens the unified editor/viewer
+                    KeyCode::Char('v') => app.open_description(),
+
                     KeyCode::Char('d') => app.prompt_delete(),
 
                     // Reordering with Shift

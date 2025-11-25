@@ -2,7 +2,6 @@ use crate::app::App;
 use ratatui::{prelude::*, widgets::*};
 
 pub fn render(f: &mut Frame, app: &App) {
-    // Layout: Header, Columns, Footer
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -49,11 +48,13 @@ pub fn render(f: &mut Frame, app: &App) {
             .map(|t| ListItem::new(format!("• {}", t.title)))
             .collect();
 
-        let border_style = if app.active_column == i && !app.input_mode && !app.delete_mode {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::White)
-        };
+        let border_style =
+            if app.active_column == i && !app.input_mode && !app.delete_mode && !app.edit_desc_mode
+            {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
 
         let list = List::new(items)
             .block(
@@ -85,7 +86,6 @@ pub fn render(f: &mut Frame, app: &App) {
             "New Task"
         };
 
-        // Create the block first to calculate inner area
         let block = Block::default().borders(Borders::ALL).title(title);
         let inner_area = block.inner(chunks[2]);
 
@@ -95,36 +95,19 @@ pub fn render(f: &mut Frame, app: &App) {
 
         f.render_widget(input, chunks[2]);
 
-        // Calculate cursor position based on app.cursor_position
         let cursor_x = inner_area.x + app.cursor_position as u16;
         let cursor_y = inner_area.y;
 
         f.set_cursor_position(Position::new(cursor_x, cursor_y));
     } else {
-        let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move";
+        let help_text = "q:Quit | n:New | e:Edit Title | v:Desc | d:Delete | Shift+↑/↓:Move";
         let help = Paragraph::new(help_text)
             .style(Style::default().fg(Color::Gray))
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(help, chunks[2]);
     }
 
-    // 4. Details Popup
-    if app.view_mode {
-        let block = Block::default()
-            .title("Task Details")
-            .borders(Borders::ALL)
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White));
-
-        // Placeholder for now
-        let text = app.get_current_task_title();
-        let paragraph = Paragraph::new(text).block(block).wrap(Wrap { trim: true });
-
-        let area = centered_rect(60, 40, f.area());
-        f.render_widget(Clear, area);
-        f.render_widget(paragraph, area);
-    }
-
-    // 5. Delete Confirmation
+    // 4. Delete Confirmation
     if app.delete_mode {
         let block = Block::default()
             .title("Confirmation")
@@ -145,9 +128,25 @@ pub fn render(f: &mut Frame, app: &App) {
         f.render_widget(Clear, area);
         f.render_widget(paragraph, area);
     }
+
+    // 5. UNIFIED DESCRIPTION EDITOR / VIEWER
+    if app.edit_desc_mode {
+        let area = centered_rect(80, 80, f.area());
+        f.render_widget(Clear, area);
+
+        let mut editor = app.description_editor.clone();
+
+        editor.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Description (Esc to Save & Close) ")
+                .style(Style::default().fg(Color::Green).bg(Color::Black)),
+        );
+
+        f.render_widget(&editor, area);
+    }
 }
 
-// Helper
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
