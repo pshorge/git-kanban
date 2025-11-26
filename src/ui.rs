@@ -70,17 +70,16 @@ pub fn render(f: &mut Frame, app: &App) {
         }
     }
 
-    // 3. Footer
+    // 3. Footer (Quick Add)
     if app.input_mode {
-        let block = Block::default().borders(Borders::ALL).title("New Task");
-        let inner = block.inner(chunks[2]);
-        let input = Paragraph::new(app.input_buffer.as_str())
-            .style(Style::default().fg(Color::Green))
-            .block(block);
-        f.render_widget(input, chunks[2]);
-        let cx = inner.x + app.cursor_position as u16;
-        let cy = inner.y;
-        f.set_cursor_position(Position::new(cx, cy));
+        let mut editor = app.title_editor.clone();
+        editor.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" New Task (Enter to Save) ")
+                .style(Style::default().fg(Color::Green)),
+        );
+        f.render_widget(&editor, chunks[2]);
     } else {
         let help_text = "q:Quit | n:New | e:Edit | v:View | d:Delete | Shift+↑/↓:Move";
         let help = Paragraph::new(help_text)
@@ -89,31 +88,27 @@ pub fn render(f: &mut Frame, app: &App) {
         f.render_widget(help, chunks[2]);
     }
 
-    // 4. VIEW MODE (Read Only)
+    // 4. VIEW MODE
     if app.view_mode {
         let area = centered_rect(60, 60, f.area());
         f.render_widget(Clear, area);
-
         let block = Block::default()
             .title(" Task Details (Esc to close) ")
             .borders(Borders::ALL)
             .style(Style::default().bg(Color::DarkGray));
         let inner = block.inner(area);
         f.render_widget(block, area);
-
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(2), Constraint::Min(1)])
             .split(inner);
         let (title_str, desc_str) = app.get_current_task_info();
-
         let title_p = Paragraph::new(title_str).style(
             Style::default()
                 .add_modifier(Modifier::BOLD)
                 .fg(Color::Cyan),
         );
         f.render_widget(title_p, layout[0]);
-
         let desc_text = if desc_str.is_empty() {
             "(No description)"
         } else {
@@ -133,54 +128,46 @@ pub fn render(f: &mut Frame, app: &App) {
     if app.edit_mode {
         let area = centered_rect(80, 80, f.area());
         f.render_widget(Clear, area);
-
         let main_block = Block::default()
             .title(" Edit Task (Tab: Switch | Ctrl+S: Save | Esc: Cancel) ")
             .borders(Borders::ALL)
             .style(Style::default().bg(Color::Black));
         let inner = main_block.inner(area);
         f.render_widget(main_block, area);
-
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(1)])
             .split(inner);
 
-        // Title Input (Top)
+        // Title Editor
         let title_color = if app.edit_focus == EditFocus::Title {
             Color::Green
         } else {
             Color::White
         };
-        let title_block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Title ")
-            .style(Style::default().fg(title_color));
-        let title_inner = title_block.inner(layout[0]);
-        let title_input = Paragraph::new(app.edit_title_buffer.as_str()).block(title_block);
-        f.render_widget(title_input, layout[0]);
+        let mut t_editor = app.title_editor.clone();
+        t_editor.set_block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Title ")
+                .style(Style::default().fg(title_color)),
+        );
+        f.render_widget(&t_editor, layout[0]);
 
-        // Description Input (Bottom - TextArea)
+        // Description Editor
         let desc_color = if app.edit_focus == EditFocus::Description {
             Color::Green
         } else {
             Color::White
         };
-        let mut editor = app.description_editor.clone();
-        editor.set_block(
+        let mut d_editor = app.description_editor.clone();
+        d_editor.set_block(
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Description ")
                 .style(Style::default().fg(desc_color)),
         );
-        f.render_widget(&editor, layout[1]);
-
-        // Manual cursor for Title
-        if app.edit_focus == EditFocus::Title {
-            let cx = title_inner.x + app.edit_cursor_pos as u16;
-            let cy = title_inner.y;
-            f.set_cursor_position(Position::new(cx, cy));
-        }
+        f.render_widget(&d_editor, layout[1]);
     }
 
     // 6. Delete Confirmation
