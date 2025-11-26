@@ -11,11 +11,11 @@ It is designed to keep your tasks private and local. It works seamlessly inside 
 - **🔒 Local & Private**:
   - **Project Mode**: If run inside a git repo, tasks are saved in `.git/git-kanban.json` (not committed to history).
   - **Standalone Mode**: If run elsewhere, tasks are saved in `.kanban.json` (hidden file).
-- **📝 Multi-line Descriptions**: Integrated full-screen editor for detailed notes (powered by `tui-textarea`).
+- **📝 Advanced Editing**: Split-window editor for Title and Description using `tui-textarea`.
 - **✏️ Full CRUD**: Create, Read, Update, and Delete tasks.
 - **↕️ Reordering**: Move tasks up and down within a column using `Shift + ↑/↓`.
 - **🛡️ Safety First**: Confirmation modal before deleting tasks.
-- **✨ Better UX**: Visual cursor support during text input.
+- **✨ Better UX**: Visual cursor support in all input fields.
 - **⚡ Blazing Fast**: Written in Rust using `ratatui`.
 
 ## 📦 Installation
