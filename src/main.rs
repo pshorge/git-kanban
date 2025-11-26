@@ -41,7 +41,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
         terminal.draw(|f| ui::render(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            // 1. Edit Mode
+            // 1. Edit Mode (Split Window)
             if app.edit_mode {
                 match key.code {
                     KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -50,38 +50,37 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> std::io::Re
                     KeyCode::Esc => app.close_edit_mode(),
                     KeyCode::Tab => app.toggle_edit_focus(),
 
-                    // Input based on focus
                     _ => match app.edit_focus {
-                        EditFocus::Title => match key.code {
-                            KeyCode::Char(c) => app.enter_char_edit_title(c),
-                            KeyCode::Backspace => app.delete_char_edit_title(),
-                            KeyCode::Enter => app.toggle_edit_focus(), // Enter moves to desc
-                            _ => {}
-                        },
+                        EditFocus::Title => {
+                            // Block Enter for Title (act as Tab or Submit)
+                            if key.code == KeyCode::Enter {
+                                app.toggle_edit_focus();
+                            } else {
+                                app.title_editor.input(key);
+                            }
+                        }
                         EditFocus::Description => {
                             app.description_editor.input(key);
                         }
                     },
                 }
             }
-            // 2. View Mode (Read Only)
+            // 2. Quick Add (Footer)
+            else if app.input_mode {
+                match key.code {
+                    KeyCode::Enter => app.submit_input(), // Enter submits
+                    KeyCode::Esc => app.cancel_input(),
+                    _ => {
+                        app.title_editor.input(key);
+                    }
+                }
+            }
+            // 3. View Mode
             else if app.view_mode {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('v') | KeyCode::Char('q') | KeyCode::Enter => {
                         app.close_view_mode()
                     }
-                    _ => {}
-                }
-            }
-            // 3. Quick Add (Footer)
-            else if app.input_mode {
-                match key.code {
-                    KeyCode::Enter => app.submit_input(),
-                    KeyCode::Esc => app.cancel_input(),
-                    KeyCode::Char(c) => app.enter_char_footer(c),
-                    KeyCode::Backspace => app.delete_char_footer(),
-                    KeyCode::Left => app.move_cursor_left_footer(),
-                    KeyCode::Right => app.move_cursor_right_footer(),
                     _ => {}
                 }
             }
