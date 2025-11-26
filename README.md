@@ -4,7 +4,11 @@ A lightweight, terminal-based (TUI) Kanban board built with **Rust**.
 
 It is designed to keep your tasks private and local. It works seamlessly inside Git repositories (storing data in `.git/`) or as a standalone task manager in any directory.
 
-![Git Kanban Demo](assets/demo.png)
+![Git Kanban Demo](assets/demo1.png)
+
+![Git Kanban Demo](assets/demo2.png)
+
+![Git Kanban Demo](assets/demo3.png)
 
 ## 🚀 Features
 
