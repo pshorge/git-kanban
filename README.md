@@ -31,7 +31,7 @@ It is designed to keep your tasks private and local. It works seamlessly inside 
 Clone the repository and install the binary:
 
 ```bash
-git clone https://github.com/hanejkopawel/git-kanban.git
+git clone https://github.com/pshorge/git-kanban.git
 cd git-kanban
 cargo install --path . --force
 ```
