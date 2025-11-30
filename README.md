@@ -43,3 +43,4 @@ To use it as a native git command:
 git config --global alias.kanban '!git-kanban'
 git kanban
 ```
+
